@@ -22,3 +22,6 @@ console.log("advanced importing");
 
 console.log(add(3, 5));
 console.log(subtract(10, 9));
+
+//event modules
+require("./EventModule.js");
