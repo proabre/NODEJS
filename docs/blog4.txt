@@ -1,0 +1,834 @@
+
+NEW CHUNK
+# Streams in Node.js
+
+A **stream** in Node.js is a way to **process data piece by piece instead of loading all of it into memory at once**.
+
+Think of a stream like a water pipe:
+
+```text
+Data source ───────► pipe ───────► destination
+```
+
+Instead of waiting for all the water to arrive, you process it as it flows.
+
+This is especially useful for:
+
+* Large files
+* HTTP requests/responses
+* Video/audio
+* File uploads/downloads
+* Database data
+* Compression
+* Processing data continuously
+
+---
+
+## 1. Why do we need streams?
+
+Suppose you have a **10 GB file**.
+
+Without streams, you might do:
+
+```js
+const fs = require("fs");
+
+const data = fs.readFileSync("huge-file.txt");
+
+console.log(data);
+```
+
+Node has to load the entire file into memory.
+
+Conceptually:
+
+```text
+10 GB file
+    ↓
+10 GB memory
+```
+
+That's obviously problematic.
+
+With a stream:
+
+```text
+10 GB file
+    ↓
+small chunk
+    ↓
+process it
+    ↓
+small chunk
+    ↓
+process it
+    ↓
+...
+```
+
+Only a relatively small amount of data needs to be in memory at a time.
+
+---
+
+# 2. The four types of streams
+
+Node.js has four fundamental stream types:
+
+| Type        | Purpose                              |
+| ----------- | ------------------------------------ |
+| `Readable`  | Data comes **out**                   |
+| `Writable`  | Data goes **in**                     |
+| `Duplex`    | Both readable and writable           |
+| `Transform` | Read data, modify it, then output it |
+
+Let's understand each.
+
+---
+
+# 3. Readable streams
+
+A **Readable Stream** is something you can read data from.
+
+For example, a file:
+
+```js
+const fs = require("fs");
+
+const stream = fs.createReadStream("file.txt");
+```
+
+Now the file is being read as a stream.
+
+You can listen for chunks:
+
+```js
+stream.on("data", (chunk) => {
+    console.log(chunk);
+});
+```
+
+A `chunk` is simply a piece of the data.
+
+For example, imagine:
+
+```text
+file.txt
+
+Hello World
+```
+
+The stream might give you:
+
+```text
+chunk 1 → "Hello"
+chunk 2 → " Worl"
+chunk 3 → "d"
+```
+
+The exact chunk sizes are determined by the stream and environment; you shouldn't assume one particular size.
+
+---
+
+# 4. The `data` event
+
+One common way to consume a readable stream is:
+
+```js
+const fs = require("fs");
+
+const stream = fs.createReadStream("file.txt");
+
+stream.on("data", (chunk) => {
+    console.log(chunk);
+});
+
+stream.on("end", () => {
+    console.log("Finished reading");
+});
+```
+
+There are two important events here:
+
+### `data`
+
+Called whenever a chunk is available.
+
+```js
+stream.on("data", (chunk) => {
+    console.log(chunk);
+});
+```
+
+### `end`
+
+Called when there is no more data.
+
+```js
+stream.on("end", () => {
+    console.log("Done");
+});
+```
+
+---
+
+# 5. Buffers
+
+You will often see this:
+
+```js
+stream.on("data", (chunk) => {
+    console.log(chunk);
+});
+```
+
+The `chunk` is usually a **Buffer** when you're reading a file.
+
+For example:
+
+```js
+<Buffer 48 65 6c 6c 6f>
+```
+
+Those bytes represent:
+
+```text
+Hello
+```
+
+You can convert it to a string:
+
+```js
+stream.on("data", (chunk) => {
+    console.log(chunk.toString());
+});
+```
+
+Or specify an encoding on the stream:
+
+```js
+const stream = fs.createReadStream("file.txt", {
+    encoding: "utf8"
+});
+
+stream.on("data", (chunk) => {
+    console.log(chunk);
+});
+```
+
+Now `chunk` will be a string.
+
+---
+
+# 6. Writable streams
+
+A **Writable Stream** is something you can write data to.
+
+For example:
+
+```js
+const fs = require("fs");
+
+const stream = fs.createWriteStream("output.txt");
+
+stream.write("Hello\n");
+stream.write("World\n");
+
+stream.end();
+```
+
+This creates:
+
+```text
+output.txt
+
+Hello
+World
+```
+
+The important methods are:
+
+```js
+stream.write(data);
+```
+
+and:
+
+```js
+stream.end();
+```
+
+`end()` tells the writable stream:
+
+> I'm finished sending data.
+
+---
+
+# 7. Readable + Writable together
+
+This is where streams become really powerful.
+
+Suppose you want to copy a file.
+
+You could manually read chunks and write them:
+
+```js
+const fs = require("fs");
+
+const input = fs.createReadStream("input.txt");
+const output = fs.createWriteStream("output.txt");
+
+input.on("data", (chunk) => {
+    output.write(chunk);
+});
+
+input.on("end", () => {
+    output.end();
+});
+```
+
+Conceptually:
+
+```text
+input.txt
+    │
+    │ chunks
+    ▼
+Readable Stream
+    │
+    ▼
+Writable Stream
+    │
+    ▼
+output.txt
+```
+
+But Node gives you a much better way.
+
+---
+
+# 8. `pipe()`
+
+You can use:
+
+```js
+input.pipe(output);
+```
+
+So the entire example becomes:
+
+```js
+const fs = require("fs");
+
+const input = fs.createReadStream("input.txt");
+const output = fs.createWriteStream("output.txt");
+
+input.pipe(output);
+```
+
+This is one of the most important concepts in Node.js streams.
+
+Think:
+
+```text
+Readable ──pipe──► Writable
+```
+
+For example:
+
+```js
+fs.createReadStream("input.txt")
+    .pipe(fs.createWriteStream("output.txt"));
+```
+
+---
+
+# 9. Why `pipe()` is better
+
+Imagine you're downloading a large file.
+
+You don't want:
+
+```text
+Server
+  ↓
+entire file
+  ↓
+RAM
+  ↓
+disk
+```
+
+You want:
+
+```text
+Server
+  ↓
+chunk
+  ↓
+disk
+  ↓
+chunk
+  ↓
+disk
+  ↓
+chunk
+  ↓
+disk
+```
+
+Streams make this possible.
+
+---
+
+# 10. Backpressure
+
+This is one of the **most important stream concepts**.
+
+Imagine:
+
+```text
+Readable
+   │
+   │ 100 MB/s
+   ▼
+Writable
+   │
+   │ 10 MB/s
+   ▼
+   Disk
+```
+
+The readable stream is producing data much faster than the writable stream can consume it.
+
+What happens?
+
+You need **backpressure**.
+
+Backpressure is essentially:
+
+> The destination tells the source to slow down because it can't process data that quickly.
+
+Node's stream mechanisms handle this for you when you use `pipe()` correctly.
+
+This is one reason you generally shouldn't implement your own:
+
+```js
+readable.on("data", chunk => {
+    writable.write(chunk);
+});
+```
+
+without understanding flow control.
+
+`pipe()` manages the flow between the streams.
+
+---
+
+# 11. Duplex streams
+
+A **Duplex stream** can both read and write.
+
+Think of a telephone:
+
+```text
+You ───────► Person
+You ◄─────── Person
+```
+
+Both directions are possible.
+
+A network socket is a classic example:
+
+```js
+const net = require("net");
+
+const server = net.createServer((socket) => {
+    socket.write("Hello");
+
+    socket.on("data", (data) => {
+        console.log(data.toString());
+    });
+});
+```
+
+The socket can:
+
+```text
+write data
+   ↓
+client
+
+client
+   ↓
+read data
+```
+
+---
+
+# 12. Transform streams
+
+A **Transform stream** is a special type of Duplex stream.
+
+It receives data, transforms it, and produces new data.
+
+Think:
+
+```text
+Input
+  ↓
+Transform
+  ↓
+Output
+```
+
+For example:
+
+```text
+"hello"
+   ↓
+uppercase transform
+   ↓
+"HELLO"
+```
+
+Node provides `Transform`:
+
+```js
+const { Transform } = require("stream");
+
+const upperCase = new Transform({
+    transform(chunk, encoding, callback) {
+        const result = chunk.toString().toUpperCase();
+
+        callback(null, result);
+    }
+});
+```
+
+You can use it like:
+
+```js
+process.stdin
+    .pipe(upperCase)
+    .pipe(process.stdout);
+```
+
+If you type:
+
+```text
+hello
+```
+
+the output becomes:
+
+```text
+HELLO
+```
+
+---
+
+# 13. `pipeline()`
+
+Modern Node.js code often uses `pipeline()` instead of manually chaining `pipe()` calls.
+
+Example:
+
+```js
+const fs = require("fs");
+const { pipeline } = require("stream");
+
+pipeline(
+    fs.createReadStream("input.txt"),
+    fs.createWriteStream("output.txt"),
+    (err) => {
+        if (err) {
+            console.error("Pipeline failed:", err);
+        } else {
+            console.log("Pipeline succeeded");
+        }
+    }
+);
+```
+
+Why is `pipeline()` useful?
+
+Because it provides better handling of:
+
+* Errors
+* Cleanup
+* Closing streams
+* Multi-stage stream processing
+
+You can think of it as:
+
+```text
+Readable
+   ↓
+Transform
+   ↓
+Transform
+   ↓
+Writable
+```
+
+---
+
+# 14. A practical example: gzip
+
+Streams become particularly useful when combined.
+
+Suppose you want to compress a file.
+
+Node has a `zlib` module:
+
+```js
+const fs = require("fs");
+const zlib = require("zlib");
+const { pipeline } = require("stream");
+
+pipeline(
+    fs.createReadStream("input.txt"),
+    zlib.createGzip(),
+    fs.createWriteStream("input.txt.gz"),
+    (err) => {
+        if (err) {
+            console.error(err);
+        } else {
+            console.log("Compressed!");
+        }
+    }
+);
+```
+
+The data flows:
+
+```text
+input.txt
+   ↓
+Readable Stream
+   ↓
+Gzip Transform
+   ↓
+Writable Stream
+   ↓
+input.txt.gz
+```
+
+Notice that the entire file doesn't need to be loaded into memory.
+
+---
+
+# 15. Streams and HTTP
+
+Streams are extremely important in HTTP.
+
+For example, Node's HTTP response is a writable stream.
+
+```js
+const http = require("http");
+
+const server = http.createServer((req, res) => {
+    res.write("Hello\n");
+    res.write("World\n");
+    res.end();
+});
+
+server.listen(3000);
+```
+
+Here:
+
+```text
+Node server
+    ↓
+HTTP response
+    ↓
+Browser
+```
+
+`res` is a writable stream.
+
+You can also stream a file to the browser:
+
+```js
+const fs = require("fs");
+const http = require("http");
+
+const server = http.createServer((req, res) => {
+    const file = fs.createReadStream("video.mp4");
+
+    file.pipe(res);
+});
+
+server.listen(3000);
+```
+
+Now:
+
+```text
+video.mp4
+    ↓
+Readable stream
+    ↓
+HTTP response
+    ↓
+Browser
+```
+
+This is much more appropriate for large files than reading the entire file first.
+
+---
+
+# 16. Async iteration
+
+There's another modern way to consume streams.
+
+You can use:
+
+```js
+for await...of
+```
+
+Example:
+
+```js
+const fs = require("fs");
+
+const stream = fs.createReadStream("file.txt", {
+    encoding: "utf8"
+});
+
+async function readFile() {
+    for await (const chunk of stream) {
+        console.log(chunk);
+    }
+}
+
+readFile();
+```
+
+This is often easier to understand than event-based code.
+
+Conceptually:
+
+```js
+for await (const chunk of stream) {
+    // process chunk
+}
+```
+
+means:
+
+> Give me each chunk as it becomes available.
+
+---
+
+# 17. The four stream types — remember this
+
+The easiest way to remember them:
+
+```text
+             STREAMS
+                │
+       ┌────────┼────────┐
+       │        │        │
+   Readable  Writable  Duplex
+                         │
+                     Transform
+```
+
+### Readable
+
+You **read from it**.
+
+```js
+readable.on("data", ...)
+```
+
+### Writable
+
+You **write to it**.
+
+```js
+writable.write(...)
+```
+
+### Duplex
+
+You can **read and write**.
+
+```text
+read  ↔  write
+```
+
+### Transform
+
+You **read, transform, and output**.
+
+```text
+input → transform → output
+```
+
+---
+
+# 18. The most important mental model
+
+Don't think:
+
+> "A stream is a file."
+
+Instead think:
+
+> **A stream is a flow of chunks of data.**
+
+For example:
+
+```text
+        chunks
+          ↓
+┌────┬────┬────┬────┐
+│ A  │ B  │ C  │ D  │
+└────┴────┴────┴────┘
+          ↓
+       processing
+```
+
+The source produces chunks, and the destination consumes them.
+
+---
+
+# 19. What you should learn next
+
+If you're learning Node.js seriously, I'd learn streams in this order:
+
+```text
+1. Buffer
+      ↓
+2. Readable streams
+      ↓
+3. Writable streams
+      ↓
+4. pipe()
+      ↓
+5. Backpressure
+      ↓
+6. Duplex streams
+      ↓
+7. Transform streams
+      ↓
+8. pipeline()
+      ↓
+9. Streams + HTTP
+      ↓
+10. Streams + file uploads/downloads
+```
+
+The **three concepts I'd focus on first** are:
+
+```js
+fs.createReadStream()
+fs.createWriteStream()
+readable.pipe(writable)
+```
+
+Once those make sense, `Transform`, `pipeline()`, and backpressure become much easier to understand.
